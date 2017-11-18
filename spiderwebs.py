@@ -882,13 +882,18 @@ def get_plane_from_points(points):
 
 def setup_anchors(points, size, max_distance=3):
     n = len(points)
-    random_indices = sample([i for i in range(len(points))], 20)
-    random_selection = [points[i] for i in random_indices]
+    neighbours_length = 0
+    while neighbours_length < 20:
+        random_start_point = points[randint(0, len(points)-1)]
+        neighbours = [p for p in points if (p-random_start_point).length < max_distance]
+        neighbours_length = len(neighbours)
+    random_indices = sample([i for i in range(len(neighbours))], 20)
+    random_selection = [neighbours[i] for i in random_indices]
     plane_co, plane_normal = get_plane_from_points(random_selection)
     new_points = []
     barycenter = Vector()
     shuffle(points)
-    for i, point in enumerate(points):
+    for i, point in enumerate(neighbours):
         barycenter += point
         if (point - barycenter / (i + 1)).length < max_distance and abs(geometry.distance_point_to_plane(point, plane_co, plane_normal)) < .6 * size:
             new_points.append(point)
