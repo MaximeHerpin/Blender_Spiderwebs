@@ -129,7 +129,7 @@ class Webs:
 
     def generate_webs(self, number):
         for i in range(number):
-            web = Web(anchor_points_candidates=self.anchor_points, gravity_strength=self.gravity_strength, size=self.size, density=self.density)
+            web = Web(anchor_points_candidates=self.anchor_points, gravity_strength=self.gravity_strength * self.size, size=self.size, density=self.density)
             self.webs.append(web)
             # new_anchors = [web.verts[i] for i in sample(range(len(web.verts)), min(10, len(web.verts)))]
             # self.anchor_points.extend(new_anchors)
@@ -317,7 +317,7 @@ class Web:
         if len(self.anchor_points) > 2:
             self.add_frame_threads(self.anchor_points)
             self.add_support_threads(.3, self.size)
-            self.add_radial_threads(pi / (10 * self.density), self.randomness)
+            self.add_radial_threads(pi / (10 * self.density), self.randomness * self.size)
             self.add_filling_threads(distance=size)
             if draw_2d:
                 self.draw_2d(1024)
@@ -831,7 +831,7 @@ def get_grease_points():
 
 
 def find_anchor_points(points, size, min_angle=2 * pi / 8, max_distance=3):
-    points, plane_normal = setup_anchors(points, size, size)
+    points, plane_normal = setup_anchors(points, size, size*3)
     center = Vector((0, 0, 0))
     for i in points:
         center += i
