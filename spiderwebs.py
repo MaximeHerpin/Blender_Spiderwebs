@@ -892,23 +892,30 @@ def get_plane_from_points(points):
 def setup_anchors(points, size, max_distance=3):
     n = len(points)
     neighbours_length = 0
-    while neighbours_length < 20:
+
+    tries = 0
+    while neighbours_length < 20 and tries < 5:
         random_start_point = points[randint(0, len(points)-1)]
         neighbours = [p for p in points if (p-random_start_point).length < max_distance]
         neighbours_length = len(neighbours)
-    random_indices = sample([i for i in range(len(neighbours))], 20)
-    random_selection = [neighbours[i] for i in random_indices]
-    plane_co, plane_normal = get_plane_from_points(random_selection)
-    new_points = []
-    barycenter = Vector()
-    shuffle(points)
-    for i, point in enumerate(neighbours):
-        barycenter += point
-        if (point - barycenter / (i + 1)).length < max_distance and abs(geometry.distance_point_to_plane(point, plane_co, plane_normal)) < .6 * size:
-            new_points.append(point)
+        tries += 1
+    if tries < 5:
+        random_indices = sample([i for i in range(len(neighbours))], 20)
+        random_selection = [neighbours[i] for i in random_indices]
+        plane_co, plane_normal = get_plane_from_points(random_selection)
+        new_points = []
+        barycenter = Vector()
+        shuffle(points)
+        for i, point in enumerate(neighbours):
+            barycenter += point
+            if (point - barycenter / (i + 1)).length < max_distance and abs(geometry.distance_point_to_plane(point, plane_co, plane_normal)) < .6 * size:
+                new_points.append(point)
 
-    new_points = convex_indexing(new_points, plane_normal)
-    return new_points, plane_normal
+        new_points = convex_indexing(new_points, plane_normal)
+        return new_points, plane_normal
+
+    else:
+        return [], Vector()
 
 
 def convex_indexing(points, direction):
@@ -954,19 +961,19 @@ def points_to_uv_coords(points, normal):
     return points_2d, quat, pos, scale
 
 
-def detect_ground(points, precision=.01):
+def detect_ground(points, precision=.003):
     z_locations = sorted([i.z for i in points])
     counter = 0
     candidate = z_locations[0]
     for z in z_locations:
-        if counter > 20:
+        if counter > 10:
             break
         if candidate - precision < z < candidate + precision:
             counter += 1
         else:
             candidate = z
 
-    if counter > 20:
+    if counter > 10:
         return candidate
     else:
         return None
