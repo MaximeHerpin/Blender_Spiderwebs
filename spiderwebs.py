@@ -85,7 +85,7 @@ class Thread:
             z = .5 + z / 2
             point_b = (point_a + point_c) / 2 + .3 * self.gravity_strength * z * Vector((0, 0, -1))
 
-        point_b.z = max(point_b.z, 0)
+        # point_b.z = max(point_b.z, 0)
 
         curve_point = (1 - t) ** 2 * point_a + 2 * (1 - t) * t * (point_b + random_vect * (point_a - point_c).length) + t ** 2 * point_c
         return curve_point
@@ -388,7 +388,6 @@ class Web:
         center_index = len(self.verts)
         self.center_index = center_index
         center_coords = self.center + Vector((0, 0, -1)) * .6 * self.gravity_strength
-        center_coords.z = max(center_coords.z, 0)
         self.center = center_coords
         self.verts.append(center_coords)
         for thread in self.threads:
@@ -831,7 +830,7 @@ def get_grease_points():
 
 
 def find_anchor_points(points, size, min_angle=2 * pi / 8, max_distance=3):
-    points, plane_normal = setup_anchors(points, size, size*3)
+    points, plane_normal = setup_anchors(points, size, size*2)
     center = Vector((0, 0, 0))
     for i in points:
         center += i
