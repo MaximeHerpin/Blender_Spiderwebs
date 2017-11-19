@@ -388,7 +388,6 @@ class Web:
         center_index = len(self.verts)
         self.center_index = center_index
         center_coords = self.center + Vector((0, 0, -1)) * .6 * self.gravity_strength
-        # center_coords.z = max(center_coords.z, 0)
         self.center = center_coords
         self.verts.append(center_coords)
         for thread in self.threads:
