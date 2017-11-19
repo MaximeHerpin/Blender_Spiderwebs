@@ -36,7 +36,9 @@ class AddSpiderWeb(Operator):
 
     size = FloatProperty(min=0.001, default=1)
     density = FloatProperty(min=0, default=1)
+    randomness = FloatProperty(min=0, default=.2)
     gravity = FloatProperty(name="gravity_strength", default=1)
+    detect_floor = BoolProperty(default=True)
     number = IntProperty(name="number of webs", default=1, min=1)
     draw_3d = BoolProperty(name="generate web strands", default=False)
     draw_curve = BoolProperty(name="generate web strands", default=True)
@@ -47,7 +49,7 @@ class AddSpiderWeb(Operator):
     def execute(self, context):
         seed(self.SeedProp)
         Webs(size=self.size, webs_number=self.number, gravity_strength=self.gravity, draw_3d=self.draw_3d, draw_2d=self.draw_2d,
-             texture_size=self.texture_size, draw_curve=self.draw_curve, density=self.density)
+             texture_size=self.texture_size, draw_curve=self.draw_curve, density=self.density, detect_floor=self.detect_floor, randomness=self.randomness)
 
         return {'FINISHED'}
 
@@ -60,7 +62,7 @@ class Thread:
         self.web_parent = web_parent
         self.gravity_strength = web_parent.gravity_strength
 
-    def position_on_curve(self, segment_index, t, randomness=0):
+    def position_on_curve(self, segment_index, t, randomness=0, ground_z=None):
         if randomness > 0:
             random_vect = Vector((random(), random(), random())) * randomness
         else:
@@ -85,7 +87,8 @@ class Thread:
             z = .5 + z / 2
             point_b = (point_a + point_c) / 2 + .3 * self.gravity_strength * z * Vector((0, 0, -1))
 
-        # point_b.z = max(point_b.z, 0)
+        if ground_z is not None:
+            point_b.z = max(point_b.z, ground_z)
 
         curve_point = (1 - t) ** 2 * point_a + 2 * (1 - t) * t * (point_b + random_vect * (point_a - point_c).length) + t ** 2 * point_c
         return curve_point
@@ -105,7 +108,9 @@ class Thread:
 
 
 class Webs:
-    def __init__(self, size, webs_number, gravity_strength, draw_3d=False, draw_curve=False, draw_2d=False, texture_size=1024, density=1.0):
+    def __init__(self, size, webs_number, gravity_strength, draw_3d=False, draw_curve=False, draw_2d=False, texture_size=1024, density=1.0, detect_floor=True, randomness=.2):
+        self.randomness = randomness
+        self.detect_floor = detect_floor
         self.density = density
         self.size = size
         self.grease_points = get_grease_points()
@@ -129,7 +134,7 @@ class Webs:
 
     def generate_webs(self, number):
         for i in range(number):
-            web = Web(anchor_points_candidates=self.anchor_points, gravity_strength=self.gravity_strength * self.size, size=self.size, density=self.density)
+            web = Web(anchor_points_candidates=self.anchor_points, gravity_strength=self.gravity_strength, size=self.size, density=self.density, ground=self.detect_floor, randomness=self.randomness)
             self.webs.append(web)
             # new_anchors = [web.verts[i] for i in sample(range(len(web.verts)), min(10, len(web.verts)))]
             # self.anchor_points.extend(new_anchors)
@@ -296,7 +301,7 @@ class Webs:
 
 
 class Web:
-    def __init__(self, gravity_strength, draw=False, draw_2d=False, curve=False, anchor_points_candidates=[], size=1, density=1):
+    def __init__(self, gravity_strength, draw=False, draw_2d=False, curve=False, anchor_points_candidates=[], size=1, density=1, ground=False, randomness=.2):
         self.density = density
         self.size = size
         self.verts = []
@@ -304,21 +309,25 @@ class Web:
         self.frame_threads = []
         self.support_threads = []
         self.position = Vector((0, 0, 0))
-        self.randomness = .2
+        self.randomness = randomness
         self.object = None
+        if ground:
+            self.ground_z = detect_ground(anchor_points_candidates)
+        else:
+            self.ground_z = None
         self.anchor_points, self.plane_normal = find_anchor_points(anchor_points_candidates, size=self.size, min_angle=pi / 16)
         self.center, self.normal = center_normal(self.anchor_points)
         self.position = self.center
         self.center_index = 0
         self.hub_indexes = []
         self.uv_coords = []
-        self.gravity_strength = gravity_strength
+        self.gravity_strength = self.size * gravity_strength
 
         if len(self.anchor_points) > 2:
             self.add_frame_threads(self.anchor_points)
             self.add_support_threads(.3, self.size)
             self.add_radial_threads(pi / (10 * self.density), self.randomness * self.size)
-            self.add_filling_threads(distance=size)
+            self.add_filling_threads(distance=size, randomness=self.randomness)
             if draw_2d:
                 self.draw_2d(1024)
                 self.draw_plane()
@@ -347,7 +356,7 @@ class Web:
             for i in range(len(thread.points) - 1):
                 new_points_indexes = [thread.points[i]]
                 for j in range(1, resolution):
-                    new_point = thread.position_on_curve(i, max(0, j + random() / 2 - .25) / resolution, randomness / resolution)
+                    new_point = thread.position_on_curve(i, max(0, j + random() / 2 - .25) / resolution, randomness / resolution, ground_z=self.ground_z)
                     n = len(self.verts)
                     self.verts.append(new_point)
                     new_points_indexes.append(n)
@@ -367,8 +376,8 @@ class Web:
                 thread_b = from_threads[(i + 2) % thread_max_index]
                 i += 1
                 new_indexes.append(i)
-            new_point_a = thread_a.position_on_curve(-2, 1 - reach_coef)
-            new_point_b = thread_b.position_on_curve(0, reach_coef)
+            new_point_a = thread_a.position_on_curve(-2, 1 - reach_coef, ground_z=self.ground_z)
+            new_point_b = thread_b.position_on_curve(0, reach_coef, ground_z=self.ground_z)
             n = len(self.verts)
             self.verts.append(new_point_a)
             self.verts.append(new_point_b)
@@ -388,6 +397,8 @@ class Web:
         center_index = len(self.verts)
         self.center_index = center_index
         center_coords = self.center + Vector((0, 0, -1)) * .6 * self.gravity_strength
+        if self.ground_z is not None:
+            center_coords.z = max(center_coords.z, self.ground_z)
         self.center = center_coords
         self.verts.append(center_coords)
         for thread in self.threads:
@@ -423,12 +434,12 @@ class Web:
                     coef = increment / 2
                     while coef < 1:
                         coef_points.append(coef)
-                        coef += ((1 - randomness) * 1 + randomness * (.5 - random())) * increment
+                        coef += ((1 - randomness) * 1 + randomness * (.5 + random())) * increment
 
                     new_points = [i for i in before_points]
 
                     for coef in coef_points:
-                        new_point = thread.position_on_curve(position_index, coef)
+                        new_point = thread.position_on_curve(position_index, coef, ground_z=self.ground_z)
                         n = len(self.verts)
                         self.verts.append(new_point)
                         new_points.append(n)
@@ -438,8 +449,8 @@ class Web:
                     thread.points = new_points
         self.threads.extend(new_threads)
 
-    def add_filling_threads(self, probability=.95, distance=1):
-        self.resolution(30 * self.density / (1 + self.size), [i for i in self.threads if i.thread_type == 'radial'], adaptative=True, randomness=.5)
+    def add_filling_threads(self, probability=.95, distance=1, randomness=0):
+        self.resolution(30 * self.density / (1 + self.size), [i for i in self.threads if i.thread_type == 'radial'], adaptative=True, randomness=randomness)
         cond = False
         radial_beginning_index = -1
         center_indexes = []
@@ -451,13 +462,11 @@ class Web:
         n = len(self.threads)
 
         for i in range(radial_beginning_index, n - 1):
-            for k in range(2):
-                center_indexes.append(self.threads[i].points[0])
+            for k in range(1):
                 self.threads[i].points.pop(0)
+                center_indexes.append(self.threads[i].points[0])
             if len(self.threads[i].points) > 0:
                 center_limits.append(self.threads[i].points[0])
-            else:
-                pass
             next_thread = i + 1
             if next_thread == n - 1:
                 next_thread = radial_beginning_index
@@ -477,42 +486,43 @@ class Web:
                             dist = new_dist
                             neighbour = new_point_index
                     thread_type = 'filling' if j > 0 else 'hub'
-                    self.threads.append(Thread([point_index, neighbour], thread_type, self))
-                    links[neighbour] = True
+                    if dist < .2*self.size/self.density:
+                        self.threads.append(Thread([point_index, neighbour], thread_type, self))
+                        links[neighbour] = True
 
         center_indexes = list(set(center_indexes))
         for point_index in center_indexes:
-            # random_indexes = sample(range(len(center_limits)), min(2, len(center_limits)))
-            # point_a, point_b = [self.verts[center_limits[i]] for i in random_indexes]
+            random_indexes = sample(range(len(center_limits)), min(2, len(center_limits)))
+            point_a, point_b = [self.verts[center_limits[i]] for i in random_indexes]
             if len(center_limits) > 2:
                 index_a = randint(0, len(center_limits) - 1)
                 point_a = self.verts[center_limits[index_a]]
                 point_b = self.verts[center_limits[(index_a + len(center_limits) // 2) % len(center_limits)]]
-                factor = random()
-                self.verts[point_index] = factor * point_a + (1 - factor) * point_b
+                factor = random()/2
+                self.verts[point_index] = factor * point_a + (.5 - factor) * point_b + .5 * self.verts[point_index]
         hub_indexes = [i for i in center_indexes]
         center_indexes.extend(center_limits)
         links = {i: [] for i in center_indexes}
 
-        for l in range(5):
-            for point_index in hub_indexes:
-                point = self.verts[point_index]
-                dist = inf
-                neighbour = 0
-                for new_point_index in center_indexes:
-                    if new_point_index != point_index and len(links[new_point_index]) < l + 3:
-                        new_point = self.verts[new_point_index]
-                        new_dist = (point - new_point).length
-                        if new_dist < dist and point_index not in links[new_point_index] and new_point_index not in links[point_index] and not (
-                                new_point_index in center_limits and point_index in center_limits):
-                            dist = new_dist
-                            neighbour = new_point_index
-                self.threads.append(Thread([point_index, neighbour], 'hub', self))
-                links[point_index].append(neighbour)
-                try:
-                    links[neighbour].append(point_index)
-                except:
-                    pass
+        # for l in range(1):
+        #     for point_index in hub_indexes:
+        #         point = self.verts[point_index]
+        #         dist = inf
+        #         neighbour = 0
+        #         for new_point_index in center_indexes:
+        #             if new_point_index != point_index and len(links[new_point_index]) < l + 3:
+        #                 new_point = self.verts[new_point_index]
+        #                 new_dist = (point - new_point).length
+        #                 if new_dist < dist and point_index not in links[new_point_index] and new_point_index not in links[point_index] and not (
+        #                         new_point_index in center_limits and point_index in center_limits):
+        #                     dist = new_dist
+        #                     neighbour = new_point_index
+        #         self.threads.append(Thread([point_index, neighbour], 'hub', self))
+        #         links[point_index].append(neighbour)
+        #         try:
+        #             links[neighbour].append(point_index)
+        #         except:
+        #             pass
 
         self.hub_indexes = center_indexes
         self.resolution(5, [i for i in self.threads if i.thread_type == 'filling'], adaptative=False)
@@ -942,6 +952,24 @@ def points_to_uv_coords(points, normal):
         point /= scale
 
     return points_2d, quat, pos, scale
+
+
+def detect_ground(points, precision=.01):
+    z_locations = sorted([i.z for i in points])
+    counter = 0
+    candidate = z_locations[0]
+    for z in z_locations:
+        if counter > 20:
+            break
+        if candidate - precision < z < candidate + precision:
+            counter += 1
+        else:
+            candidate = z
+
+    if counter > 20:
+        return candidate
+    else:
+        return None
 
 
 def register():
